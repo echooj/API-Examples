@@ -1,0 +1,2 @@
+Agora_Native_SDK_for_Windows_x64_rel.v2.7.0.3.27976_20200818_0410
+Agora_Native_SDK_for_Windows_x86_rel.v2.7.1_28993_20200827_0025
