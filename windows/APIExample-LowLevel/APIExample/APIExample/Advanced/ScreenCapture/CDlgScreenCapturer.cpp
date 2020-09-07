@@ -36,10 +36,10 @@ BOOL CMonitors::MonitorFunc(HMONITOR hMonitor, HDC hDc, LPRECT lpRect, LPARAM lP
 	MonitorInformation monitorInfo;
 	monitorInfo.monitorInfo = info;
 	monitorInfo.hMonitor = hMonitor;
-	if (info.rcMonitor.left < 0
+	/*if (info.rcMonitor.left < 0
 		|| info.rcMonitor.top < 0) {
 		monitorInfo.canShare = false;
-	}
+	}*/
 	// UINT dpiX = 0;
 	// UINT dpiY = 0;
 	// GetDpiForMonitor(hMonitor, MDT_EFFECTIVE_DPI ,&dpiX, &dpiY);
@@ -150,13 +150,21 @@ bool CMonitors::GetWindowRect(HWND hWnd, agora::rtc::Rectangle& regionRect)
 	HMONITOR hMonitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
 	RECT rcWnd = { 0 };
 	::GetWindowRect(hWnd, &rcWnd);
-
+	int scale_den = 1;
+	int scale_num = 1;
+	for (size_t i = 0; i < m_vecEffectiveMonitorInfos.size(); i++) {
+		if (hMonitor == m_vecEffectiveMonitorInfos[i].hMonitor) {
+			scale_num = m_vecEffectiveMonitorInfos[i].scale_num;
+			scale_den = m_vecEffectiveMonitorInfos[i].scale_den;
+			break;
+		}
+	}
 	agora::rtc::Rectangle rcScreen;
-	GetMonitorRectangle(hMonitor, rcScreen);
+	/*GetMonitorRectangle(hMonitor, rcScreen);
 
 	regionRect = RectToRectangle(rcWnd);
 	regionRect.x = rcWnd.left - rcScreen.x;
-	regionRect.y = rcWnd.top - rcScreen.y;
+	regionRect.y = rcWnd.top - rcScreen.y;*/
 	return true;
 }
 
@@ -190,6 +198,7 @@ BEGIN_MESSAGE_MAP(CDlgScreenCapturer, CDialogEx)
 	ON_BN_CLICKED(IDC_BUTTON_JOINCHANNEL, &CDlgScreenCapturer::OnBnClickedButtonJoinchannel)
 	ON_MESSAGE(MULTI_CAMERA_CONNECTED, &CDlgScreenCapturer::OnEIDConnected)
 	ON_MESSAGE(MULTI_CAMERA_DISCONNECTED, &CDlgScreenCapturer::OnEIDDisConnected)
+	ON_MESSAGE(MULTI_CAMERA_SUBSCRIBE_VIDEO_TRACKS, &CDlgScreenCapturer::OnEIDSubscribeRemoteVideo)
 	ON_WM_SHOWWINDOW()
 
 END_MESSAGE_MAP()
@@ -214,13 +223,16 @@ BOOL CDlgScreenCapturer::OnInitDialog()
 	m_cmbRole.InsertString(0, _T("主播"));
 	m_cmbRole.InsertString(1, _T("观众"));
 	m_cmbRole.SetCurSel(0);
-	m_videoWnd.Create(NULL, NULL, WS_CHILD | WS_VISIBLE | WS_BORDER | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, CRect(0, 0, 1, 1), &m_videoArea, IDC_SCREENCAPTURER_VIDEO);
+	for (int i = 0; i < SCREEN_VIDEO_COUNT; ++i) {
+		m_videoWnd[i].Create(NULL, NULL, WS_CHILD | WS_VISIBLE | WS_BORDER | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, CRect(0, 0, 1, 1), &m_videoArea, IDC_SCREENCAPTURER_VIDEO);
 
+	}
+	
 	RECT rcArea;
 	m_videoArea.GetClientRect(&rcArea);
-	m_videoWnd.MoveWindow(&rcArea);
-	m_videoWnd.ShowWindow(SW_HIDE);
-	m_videoWnd.ShowWindow(SW_SHOW);
+	m_videoWnd[0].MoveWindow(&rcArea);
+	m_videoWnd[0].ShowWindow(SW_HIDE);
+	m_videoWnd[0].ShowWindow(SW_SHOW);
 	return TRUE;  // return TRUE unless you set the focus to a control
 }
 
@@ -273,6 +285,7 @@ void CDlgScreenCapturer::JoinChannel()
 	m_edtChannelName.GetWindowText(channelName);
 	m_btnJoinChannel.EnableWindow(FALSE);
 	m_cmbRole.EnableWindow(FALSE);
+	m_cmbScreenCap.EnableWindow(FALSE);
 	m_btnJoinChannel.SetWindowText(_T("LeaveChannel"));
 	if (m_cmbRole.GetCurSel() == 0) {//broadcaster
 		// set user role broadcaster
@@ -316,7 +329,7 @@ void CDlgScreenCapturer::JoinChannel()
 		else {
 			agora::rtc::Rectangle rect;
 			int wndIdnex = m_cmbScreenCap.GetCurSel() - m_monitors.GetMonitorCount();
-			m_localScreenCapture->initWithWindowId(m_vecWnd[wndIdnex], rect);
+			m_localScreenCapture->initWithWindowId(m_vecHwnds[wndIdnex], rect);
 		}
 
 		//create screen capture video track
@@ -326,7 +339,7 @@ void CDlgScreenCapturer::JoinChannel()
 		m_screenCaptureVideoTrack->setEnabled(true);
 		m_lstInfo.InsertString(m_lstInfo.GetCount() - 1, _T("enable screen track"));
 		// create local renders
-		m_localScreenCaptureRender = sdk_ptr->CreateWindowedRender(m_videoWnd);
+		m_localScreenCaptureRender = sdk_ptr->CreateWindowedRender(m_videoWnd[0]);
 		m_lstInfo.InsertString(m_lstInfo.GetCount() - 1, _T("Create local render"));
 		// add local renders
 		m_lstInfo.InsertString(m_lstInfo.GetCount() - 1, _T("Add local render"));
@@ -385,7 +398,7 @@ void CDlgScreenCapturer::LeaveChannel()
 
 		m_lstInfo.InsertString(m_lstInfo.GetCount() - 1, _T("stop screenCapture"));
 
-		m_videoWnd.Invalidate();
+		m_videoWnd[0].Invalidate();
 		// disconnect
 		m_connection->Disconnect();
 		m_lstInfo.InsertString(m_lstInfo.GetCount() - 1, _T("disconnect connection"));
@@ -406,6 +419,7 @@ LRESULT CDlgScreenCapturer::OnEIDConnected(WPARAM wParam, LPARAM lParam)
 {
 	m_bConnected = true;
 	m_btnJoinChannel.EnableWindow(TRUE);
+
 	m_lstInfo.InsertString(m_lstInfo.GetCount() - 1, _T("connected"));
 	if (m_cmbRole.GetCurSel() == 0) {//主播
 		
@@ -420,7 +434,32 @@ LRESULT CDlgScreenCapturer::OnEIDDisConnected(WPARAM wParam, LPARAM lParam)
 {
 	m_lstInfo.InsertString(m_lstInfo.GetCount() - 1, _T("disconnected"));
 	m_bConnected = false;
+	m_cmbScreenCap.EnableWindow(TRUE);
 	m_btnJoinChannel.EnableWindow(TRUE);
+	m_cmbRole.EnableWindow(TRUE);
+	return 0;
+}
+
+LRESULT CDlgScreenCapturer::OnEIDSubscribeRemoteVideo(WPARAM wParam, LPARAM lParam)
+{
+	if (m_vecRemoteVideoTracks.size() > SCREEN_VIDEO_COUNT)
+		return 0;
+
+	agora::rtc::IRemoteVideoTrack* videoTrack = (agora::rtc::IRemoteVideoTrack*)lParam;
+	agora::rtc::VideoTrackInfo trackInfo;
+	videoTrack->getTrackInfo(trackInfo);
+	char szVideoTrack[MAX_PATH] = { 0 };
+	sprintf_s(szVideoTrack, MAX_PATH, "%u%u", trackInfo.ownerUid, trackInfo.trackId);
+
+	if (m_mapUserVideoTrack.find(szVideoTrack) == m_mapUserVideoTrack.end()) {
+		int index = m_mapUserVideoTrack.size();
+		auto renderer = sdk_ptr->CreateWindowedRender(m_videoWnd[index].GetSafeHwnd());
+		videoTrack->addRenderer(renderer);
+		m_vecRemoteVideoTracks.push_back(videoTrack);
+		m_vecRemoteRenders.push_back(renderer);
+		m_mapUserVideoTrack.insert(std::make_pair(szVideoTrack, m_videoWnd[index].GetSafeHwnd()));
+
+	}
 	return 0;
 }
 
@@ -441,42 +480,79 @@ void CDlgScreenCapturer::ResumeStatus()
 	m_lstInfo.ResetContent();
 	m_edtChannelName.SetWindowText(_T(""));
 	m_cmbScreenCap.ResetContent();
-	m_cmbRole.ResetContent();
-	
 }
 
-static
-BOOL IsWindowCloaked(HWND hwnd)
-{
-	BOOL isCloaked = FALSE;
-	return (SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED,
-		&isCloaked, sizeof(isCloaked))) && isCloaked);
-}
-static
-BOOL IsWindowVisibleOnScreen(HWND hwnd)
-{
-	return IsWindowVisible(hwnd) &&
-		!IsWindowCloaked(hwnd);
-}
 
 /*
 	enum window callback function.
 */
-BOOL CALLBACK CDlgScreenCapturer::WndEnumProc(HWND hWnd, LPARAM lParam)
+BOOL CALLBACK CDlgScreenCapturer::EnumWindowsProc(HWND hwnd, LPARAM lParam)
 {
-	std::vector<HWND>* vecHwnds = (std::vector<HWND>*)lParam;
-	TCHAR strName[255];
-	::GetWindowText(hWnd, strName, 255);
-	CString str = strName;
-	LONG lStyle = ::GetWindowLong(hWnd, GWL_STYLE);
-	if ((lStyle & WS_VISIBLE) != 0
-		&& (lStyle & (WS_POPUP | WS_SYSMENU)) != 0
-		&& IsWindowVisibleOnScreen(hWnd)
-		&& !str.IsEmpty()
-		&& str.Compare(_T("Program Manager"))
-		//&&::IsZoomed(hWnd)
-		)
-		vecHwnds->push_back(hWnd);
+
+    // Skip windows that are invisible, minimized, have no title, or are owned,
+	// unless they have the app window style set.
+	HWND owner = ::GetWindow(hwnd, GW_OWNER);
+	LONG exstyle = ::GetWindowLong(hwnd, GWL_EXSTYLE);
+	if (::IsIconic(hwnd) || /*!::IsWindowVisible(hwnd) ||*/  
+		(owner && !(exstyle & WS_EX_APPWINDOW))) {
+		return TRUE;
+	}
+
+	// Skip the Program Manager window and the Start button.
+	const size_t kClassLength = 256;
+	char class_name[kClassLength];
+	const int class_name_length = GetClassNameA(hwnd, class_name, kClassLength);
+
+	//    RTC_DCHECK(class_name_length)
+	//        << "Error retrieving the application's class name";
+	// Skip Program Manager window and the Start button. This is the same logic
+	// that's used in Win32WindowPicker in libjingle. Consider filtering other
+	// windows as well (e.g. toolbars).
+	if (strcmp(class_name, "Progman") == 0 || strcmp(class_name, "Button") == 0)
+		return TRUE;
+
+	// Windows 8 introduced a "Modern App" identified by their class name being
+	// either ApplicationFrameWindow or windows.UI.Core.coreWindow. The
+	// associated windows cannot be captured, so we skip them.
+	// http://crbug.com/526883.
+
+	ULONGLONG dwConditionMask = 0;
+	VER_SET_CONDITION(dwConditionMask, VER_MAJORVERSION, VER_GREATER_EQUAL);
+	VER_SET_CONDITION(dwConditionMask, VER_MINORVERSION, VER_GREATER_EQUAL);
+	OSVERSIONINFOEX osx;
+	ZeroMemory(&osx, sizeof(OSVERSIONINFOEX));
+	osx.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
+	osx.dwMajorVersion = 6;
+	osx.dwMinorVersion = 2;
+	int ret = VerifyVersionInfo(&osx, VER_MAJORVERSION | VER_MINORVERSION, dwConditionMask);
+	//win8
+	if (ret &&
+		(strcmp(class_name, "ApplicationFrameWindow") == 0 ||
+			strcmp(class_name, "Windows.UI.Core.CoreWindow") == 0)) {
+		return TRUE;
+	}
+	std::unordered_set<HWND> m_setHwnds;
+	std::vector<HWND> *vecHwnds = reinterpret_cast<std::vector<HWND> *>(lParam);
+	LONG lStyle = ::GetWindowLong(hwnd, GWL_STYLE);
+	if ((lStyle&WS_VISIBLE) != 0 && (lStyle&(WS_POPUP | WS_SYSMENU)) != 0
+		&& m_setHwnds.find(hwnd) == m_setHwnds.end()) {
+		TCHAR		strName[255];
+		::GetWindowText(hwnd, strName, 255);
+		char class_name[100] = { 0 };
+		GetClassNameA(hwnd, class_name, 99);
+		if (strcmp(class_name, "EdgeUiInputTopWndClass") == 0
+			|| strcmp(class_name, "Shell_TrayWnd") == 0
+			|| strcmp(class_name, "DummyDWMListenerWindow") == 0
+			|| strcmp(class_name, "WorkerW") == 0
+			|| strcmp(class_name, "PopupRbWebDialog") == 0
+			|| strcmp(class_name, "TXGuiFoundation") == 0 //kuwo advertisement
+			|| _tcsclen(strName) == 0)
+		{
+			return TRUE;
+		}
+		m_setHwnds.insert(hwnd);
+		vecHwnds->push_back(hwnd);
+	}
 
 	return TRUE;
 }
@@ -485,22 +561,23 @@ BOOL CALLBACK CDlgScreenCapturer::WndEnumProc(HWND hWnd, LPARAM lParam)
 void CDlgScreenCapturer::ReFreshWnd()
 {
 	//refresh window info.
-	m_vecWnd.clear();
-	::EnumWindows(&CDlgScreenCapturer::WndEnumProc, (LPARAM)&m_vecWnd);
+	m_vecHwnds.clear();
+	::EnumWindows(&CDlgScreenCapturer::EnumWindowsProc, (LPARAM)&m_vecHwnds);
 
 	//enumerate hwnd to add m_cmbScreenCap.
 	int i = m_cmbScreenCap.GetCount();
 
-	for (auto iter = m_vecWnd.begin(); iter != m_vecWnd.end(); ++iter) {
-		HWND hWnd = *iter;
+	for (auto iter = m_vecHwnds.begin(); iter != m_vecHwnds.end(); ++iter) {
 		TCHAR		strName[255];
-		::GetWindowText(hWnd, strName, 255);
+		::GetWindowText(*iter, strName, 255);
+		HWND windowid = *iter;
+		char class_name[100] = { 0 };
+		GetClassNameA(*iter, class_name, 99);
 		m_cmbScreenCap.InsertString(i++, strName);
 	}
 
 	m_cmbScreenCap.SetCurSel(0);
 }
-
 
 void CDlgScreenCapturer::InitMonitorInfos()
 {

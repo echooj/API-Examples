@@ -83,3 +83,5 @@ release/
 .qmake.stash
 
 sdk/
+.vs/
+x64/

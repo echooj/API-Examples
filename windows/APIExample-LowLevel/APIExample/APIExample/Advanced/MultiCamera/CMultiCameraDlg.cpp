@@ -349,19 +349,21 @@ LRESULT CMultiCameraDlg::OnEIDDisConnected(WPARAM wParam, LPARAM lParam)
 
 LRESULT CMultiCameraDlg::OnEIDSubscribeRemoteVideo(WPARAM wParam, LPARAM lParam)
 {
-    agora::rtc::IRemoteVideoTrack* videoTrack = (agora::rtc::IRemoteVideoTrack*)lParam;
-    agora::rtc::VideoTrackInfo trackInfo;
-    videoTrack->getTrackInfo(trackInfo);
-    char szVideoTrack[MAX_PATH] = { 0 };
-    sprintf_s(szVideoTrack, MAX_PATH, "%u%u", trackInfo.ownerUid, trackInfo.trackId);
+	agora::rtc::IRemoteVideoTrack* videoTrack = (agora::rtc::IRemoteVideoTrack*)lParam;
+	agora::rtc::VideoTrackInfo trackInfo;
+	videoTrack->getTrackInfo(trackInfo);
+	char szVideoTrack[MAX_PATH] = { 0 };
+	sprintf_s(szVideoTrack, MAX_PATH, "%u%u", trackInfo.ownerUid, trackInfo.trackId);
 
-    if (m_mapUserVideoTrack.find(szVideoTrack) == m_mapUserVideoTrack.end()) {
-        int index = m_mapUserVideoTrack.size();
-        auto renderer = sdk_ptr->CreateWindowedRender(m_videoWnds[index]);
-        videoTrack->addRenderer(renderer);
-        m_mapUserVideoTrack.insert(std::make_pair(szVideoTrack, m_videoWnds[index].GetSafeHwnd()));
+	if (m_mapUserVideoTrack.find(szVideoTrack) == m_mapUserVideoTrack.end()) {
+		int index = m_mapUserVideoTrack.size();
+		auto renderer = sdk_ptr->CreateWindowedRender(m_videoWnds[index].GetSafeHwnd());
+		videoTrack->addRenderer(renderer);
+		m_vecRemoteVideoTracks.push_back(videoTrack);
+		m_vecRemoteRenders.push_back(renderer);
+		m_mapUserVideoTrack.insert(std::make_pair(szVideoTrack, m_videoWnds[index].GetSafeHwnd()));
 
-    }
+	}
     return 0;
 }
 //Initialize the Agora SDK

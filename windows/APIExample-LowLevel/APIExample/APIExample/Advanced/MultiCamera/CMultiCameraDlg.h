@@ -58,7 +58,10 @@ private:
     std::vector<agora::agora_refptr<agora::rtc::ILocalVideoTrack>> m_vecCameraVideoTracks;
 	//Local video renders for multiple cameras 
     std::vector<agora::agora_refptr<agora::rtc::IVideoRenderer>> m_vecLocalRenders;
-
+	// remote video tracks
+	std::vector<agora::agora_refptr<agora::rtc::IRemoteVideoTrack>> m_vecRemoteVideoTracks;
+	// remote video renders
+	std::vector<agora::agora_refptr<agora::rtc::IVideoRenderer>> m_vecRemoteRenders;
     std::map<std::string, HWND> m_mapUserVideoTrack;
     int m_maxVideoCount = 0;
     CAGVideoWnd m_videoWnds[MAX_VIDEO_COUNT];

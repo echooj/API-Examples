@@ -5,8 +5,9 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <unordered_set>
 #define IDC_SCREENCAPTURER_VIDEO      10030
-
+#define SCREEN_VIDEO_COUNT  1
 class CMonitors {
 public:
 	typedef struct _MonitorInformation {
@@ -54,10 +55,11 @@ protected:
 
 	DECLARE_MESSAGE_MAP()
 public:
-	static BOOL CALLBACK WndEnumProc(HWND hWnd, LPARAM lParam);
+	static BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam);
 	afx_msg void OnBnClickedButtonJoinchannel();
 	afx_msg LRESULT OnEIDConnected(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnEIDDisConnected(WPARAM wParam, LPARAM lParam);
+	afx_msg LRESULT OnEIDSubscribeRemoteVideo(WPARAM wParam, LPARAM lParam);
 public:
 	//Initialize the Agora SDK
 	bool InitAgora();
@@ -83,10 +85,14 @@ private:
 	agora::agora_refptr<agora::rtc::IVideoRenderer> m_localScreenCaptureRender;
 	agora::agora_refptr<agora::rtc::IScreenCapturer> m_localScreenCapture;
 	std::map<std::string, HWND> m_mapUserVideoTrack;
+	// remote video tracks
+	std::vector<agora::agora_refptr<agora::rtc::IRemoteVideoTrack>> m_vecRemoteVideoTracks;
+	// remote video renders
+	std::vector<agora::agora_refptr<agora::rtc::IVideoRenderer>> m_vecRemoteRenders;
 	int m_maxVideoCount = 0;
-	CAGVideoWnd m_videoWnd;
+	CAGVideoWnd m_videoWnd[SCREEN_VIDEO_COUNT];
 	bool m_bConnected = false;
-	std::vector<HWND> m_vecWnd;
+	std::vector<HWND> m_vecHwnds;
 	CMonitors m_monitors;
 public:
 	CListBox m_lstInfo;
