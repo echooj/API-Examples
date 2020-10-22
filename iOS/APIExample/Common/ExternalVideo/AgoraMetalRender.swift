@@ -1,5 +1,5 @@
 //
-//  AgoraMetalRender.swift
+//  AgoraRenderView.swift
 //  Agora-Custom-Media-Device
 //
 //  Created by GongYuhua on 2017/11/15.
@@ -13,12 +13,12 @@ import Metal
 #endif
 import AgoraRtcKit
 
-protocol AgoraMetalRenderMirrorDataSource: NSObjectProtocol {
-    func renderViewShouldMirror(renderView: AgoraMetalRender) -> Bool
+protocol AgoraRenderViewMirrorDataSource: NSObjectProtocol {
+    func renderViewShouldMirror(renderView: AgoraRenderView) -> Bool
 }
 
-class AgoraMetalRender: UIView {
-    weak var mirrorDataSource: AgoraMetalRenderMirrorDataSource?
+class AgoraRenderView: UIView {
+    weak var mirrorDataSource: AgoraRenderViewMirrorDataSource?
     
     fileprivate var textures: [MTLTexture]?
     fileprivate var vertexBuffer: MTLBuffer?
@@ -59,7 +59,7 @@ class AgoraMetalRender: UIView {
     }
 }
 
-extension AgoraMetalRender: AgoraVideoSinkProtocol {
+extension AgoraRenderView: AgoraVideoSinkProtocol {
     func shouldInitialize() -> Bool {
         initializeRenderPipelineState()
         return true
@@ -78,7 +78,15 @@ extension AgoraMetalRender: AgoraVideoSinkProtocol {
     }
     
     func shouldDispose() {
+        _ = semaphore.wait(timeout: .distantFuture)
         textures = nil
+        vertexBuffer = nil
+        #if os(macOS) || (os(iOS) && (!arch(i386) && !arch(x86_64)))
+        metalView.delegate = nil
+        textureCache = nil
+        #endif
+        commandQueue = nil
+        semaphore.signal()
     }
     
     func bufferType() -> AgoraVideoBufferType {
@@ -107,7 +115,7 @@ extension AgoraMetalRender: AgoraVideoSinkProtocol {
         if let renderedCoordinates = rotation.renderedCoordinates(mirror: mirror,
                                                                   videoSize: size,
                                                                   viewSize: viewSize) {
-            let byteLength = 16 * MemoryLayout.size(ofValue: renderedCoordinates[0])
+            let byteLength = 4 * MemoryLayout.size(ofValue: renderedCoordinates[0])
             vertexBuffer = device?.makeBuffer(bytes: renderedCoordinates, length: byteLength, options: [])
         }
         
@@ -119,7 +127,7 @@ extension AgoraMetalRender: AgoraVideoSinkProtocol {
     }
 }
 
-private extension AgoraMetalRender {
+private extension AgoraRenderView {
     func initializeMetalView() {
     #if os(iOS) && (!arch(i386) && !arch(x86_64))
         metalView = MTKView(frame: bounds, device: device)
@@ -186,7 +194,7 @@ private extension AgoraMetalRender {
 }
 
 #if os(iOS) && (!arch(i386) && !arch(x86_64))
-extension AgoraMetalRender: MTKViewDelegate {
+extension AgoraRenderView: MTKViewDelegate {
     public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         
     }
@@ -197,18 +205,16 @@ extension AgoraMetalRender: MTKViewDelegate {
         }
     
         _ = semaphore.wait(timeout: .distantFuture)
-        autoreleasepool {
-            guard let textures = textures, let device = device,
-                let commandBuffer = commandQueue?.makeCommandBuffer() else {
-                _ = semaphore.signal()
+        guard let textures = textures, let device = device,
+            let commandBuffer = commandQueue?.makeCommandBuffer(), let vertexBuffer = vertexBuffer else {
+                semaphore.signal()
                 return
-            }
-            
-            render(textures: textures, withCommandBuffer: commandBuffer, device: device)
         }
+        
+        render(textures: textures, withCommandBuffer: commandBuffer, device: device, vertexBuffer: vertexBuffer)
     }
     
-    private func render(textures: [MTLTexture], withCommandBuffer commandBuffer: MTLCommandBuffer, device: MTLDevice) {
+    private func render(textures: [MTLTexture], withCommandBuffer commandBuffer: MTLCommandBuffer, device: MTLDevice, vertexBuffer: MTLBuffer) {
         guard let currentRenderPassDescriptor = metalView.currentRenderPassDescriptor,
             let currentDrawable = metalView.currentDrawable,
             let renderPipelineState = renderPipelineState,
